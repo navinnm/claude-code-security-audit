@@ -16,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 SCHEMA_VERSION = 3
 
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "env", "node_modules", "vendor",
@@ -60,6 +60,8 @@ GENERAL_TOOLS = [("gitleaks dir . --redact", "gitleaks", False),
 MAX_BYTES = 1_500_000
 MAX_LINE = 4000
 MAX_SIGNAL_LOCATIONS = 8
+REPORT_MARKDOWN_HEADER = "# Local SaaS Security Heuristic Scan"
+REPORT_JSON_MARKER = '"scanner": "saas-security-audit-heuristics"'
 SEVERITY_RANK = {"Critical": 4, "High": 3, "Medium": 2, "Low": 1, "Informational": 0}
 
 CONTROLS = [
@@ -595,6 +597,12 @@ def read_lines(path):
     return data.decode("utf-8", errors="replace").splitlines()
 
 
+def is_own_report(lines):
+    """True for a report this scanner wrote (Markdown or JSON); re-scanning it would flag quoted evidence."""
+    head = "\n".join(lines[:4])
+    return head.startswith(REPORT_MARKDOWN_HEADER) or REPORT_JSON_MARKER in head
+
+
 def scan(root, collect=None):
     """Return line- and repo-level findings. `collect`, if given, receives signals/inventory."""
     root = Path(root)
@@ -620,7 +628,7 @@ def scan(root, collect=None):
             if category is None:
                 continue
             lines = read_lines(path)
-            if lines is None:
+            if lines is None or is_own_report(lines):
                 continue
             state["files_scanned"] += 1
             in_test = bool(TEST_PATH_RE.search(rel))

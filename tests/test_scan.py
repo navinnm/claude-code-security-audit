@@ -206,6 +206,16 @@ class BehaviourTests(ScanCase):
         write(self.root, "node_modules/bad.js", "eval(userInput)\n")
         self.assertEqual(scan_module.scan(self.root), [])
 
+    def test_own_reports_are_not_rescanned(self):
+        write(self.root, "a.py", "eval(x)\n")
+        with contextlib.redirect_stdout(io.StringIO()):
+            scan_module.main(["--root", str(self.root), "--format", "json", "--output", str(self.root / "baseline.json")])
+            scan_module.main(["--root", str(self.root), "--output", str(self.root / "security-report.md")])
+        state = {}
+        findings = scan_module.scan(self.root, state)
+        self.assertEqual({f["file"] for f in findings}, {"a.py"})
+        self.assertEqual(state["files_scanned"], 1)
+
     def test_test_paths_are_context_marked(self):
         write(self.root, "tests/test_x.py", "eval(x)\n")
         hit = scan_module.scan(self.root)[0]
