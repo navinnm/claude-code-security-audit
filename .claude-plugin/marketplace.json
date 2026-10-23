@@ -9,7 +9,7 @@
       "name": "saas-security-audit",
       "source": "./",
       "description": "SaaS security audit for Claude Code: tenant isolation, IDOR/BOLA, Supabase RLS, secrets, SQL injection, CORS, and webhook checks mapped to 22 controls, including SSRF, JWT sessions, and AI/LLM prompt injection.",
-      "version": "0.3.1"
+      "version": "0.4.0"
     }
   ]
 }

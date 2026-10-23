@@ -16,7 +16,7 @@ import shutil
 import sys
 from pathlib import Path
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 SCHEMA_VERSION = 3
 
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "env", "node_modules", "vendor",
@@ -278,6 +278,20 @@ RULES = [
           r"(?i)\b(?:ACCESS_TOKEN_EXPIRE\w*|JWT_EXPIRATION\w*|SESSION_COOKIE_AGE)\s*=\s*(?:timedelta\(\s*days\s*=\s*(?:[3-9]\d|\d{3,})|\d{7,})",
           r"(?i)\bmaxAge\s*:\s*(?:\d{10,}|[3-9]\d\s*\*\s*24\s*\*\s*60\s*\*\s*60(?:\s*\*\s*1000)?|\d{3,}\s*\*\s*24\s*\*\s*60\s*\*\s*60)"],
          "Keep access tokens short (minutes), rotate refresh tokens on use, and revoke sessions server-side on password or role change."),
+    Rule("SEC040", "Authorization decided in client-side code", "Medium", "low", (3, 14), CODE,
+         [(r"""(?i)\blocalStorage\.getItem\(\s*["'](?:is_?admin|role|user_?role|permissions?)["']""", JS),
+          (r"""(?i)\b(?:user|session|currentUser|profile)\??\.(?:role|isAdmin|is_admin)\s*===?\s*["']?(?:admin|owner|superuser|true)\b""", {".jsx", ".tsx", ".vue", ".svelte"})],
+         "UI checks are for display only; enforce the same rule on the server for every request."),
+    Rule("SEC041", "Auth token stored in localStorage", "Medium", "medium", (21, 8), CODE,
+         [(r"""(?i)\blocalStorage\.setItem\(\s*["'][\w.-]*(?:token|jwt|session|auth)[\w.-]*["']""", JS)],
+         "Any XSS can read localStorage. Keep session tokens in HttpOnly, Secure, SameSite cookies."),
+    Rule("SEC042", "Secret API used directly from the browser", "High", "high", (15, 22), CODE,
+         [(r"\bdangerouslyAllowBrowser\s*:\s*true\b", JS), (r"""\bnew\s+Stripe\(\s*["']sk_""", JS)],
+         "Calling OpenAI/Anthropic or Stripe secret APIs from the browser ships your secret key to every visitor. Proxy through a server route."),
+    Rule("SEC043", "Security left as a TODO", "Medium", "low", (2, 3), CODE_CFG,
+         [r"(?i)(?:#|//|/\*|--)\s*(?:TODO|FIXME|HACK|XXX)\b[^\n]{0,60}\b(?:auth|authori[sz]|permission|access control|rate.?limit|validat|sanitiz|security|csrf|rls)",
+          r"(?i)(?:#|//)\s*(?:skip|bypass|disable[ds]?)\s+(?:auth|authentication|authorization|security|csrf|rls)\b"],
+         "Resolve before release: these comments usually mark a route or check that is still open.", skip_comments=False),
 ]
 
 SECRET_FORMATS = [
@@ -440,6 +454,163 @@ RULE_TITLES.update({"SEC001": "Possible hardcoded credential", "SEC012": "Known-
                     "SEC032": "Environment file not covered by root .gitignore", "SEC033": "Dependency manifest without a lockfile",
                     "SEC034": "Webhook handler without visible idempotency handling",
                     "SEC038": "RLS enabled but no policies defined", "SEC039": "Prisma model without a tenant key in a multi-tenant schema"})
+# ---------- standards mapping ----------
+# rule -> (OWASP Top 10 2021, OWASP API Top 10 2023, OWASP LLM Top 10 2025, CWE IDs, weakness kind)
+STANDARDS = {
+    "SEC001": ("A07", [], [], ["CWE-798"], "secrets"), "SEC002": ("A03", [], [], ["CWE-95"], "injection"),
+    "SEC003": ("A03", [], [], ["CWE-89"], "injection"), "SEC004": ("A05", ["API8"], [], ["CWE-489"], "config"),
+    "SEC005": ("A05", ["API8"], [], ["CWE-942"], "config"), "SEC006": ("A02", ["API8"], [], ["CWE-319"], "transport"),
+    "SEC007": ("A05", ["API8"], [], ["CWE-614", "CWE-1004"], "transport"), "SEC011": ("A09", [], [], ["CWE-532"], "logging"),
+    "SEC012": ("A07", [], [], ["CWE-798"], "secrets"), "SEC013": ("A03", [], [], ["CWE-78"], "injection"),
+    "SEC014": ("A08", [], [], ["CWE-502"], "integrity"), "SEC015": ("A03", [], [], ["CWE-79"], "injection"),
+    "SEC016": ("A02", ["API8"], [], ["CWE-295"], "transport"), "SEC017": ("A07", ["API2"], [], ["CWE-347"], "auth"),
+    "SEC018": ("A01", [], [], ["CWE-352"], "access"), "SEC019": ("A08", ["API3"], [], ["CWE-915"], "access"),
+    "SEC020": ("A10", ["API7"], [], ["CWE-918"], "ssrf"), "SEC021": ("A02", [], [], ["CWE-338"], "crypto"),
+    "SEC022": ("A01", ["API1"], [], ["CWE-863"], "access"), "SEC023": ("A01", [], [], ["CWE-200"], "secrets"),
+    "SEC024": ("A02", [], [], ["CWE-916"], "crypto"), "SEC025": ("A04", ["API8"], [], ["CWE-209"], "design"),
+    "SEC026": ("A01", [], [], ["CWE-284"], "access"), "SEC027": ("A01", [], [], ["CWE-601"], "access"),
+    "SEC028": ("A01", [], [], ["CWE-22"], "access"), "SEC029": ("A03", [], [], ["CWE-943"], "injection"),
+    "SEC030": ("A01", ["API1"], [], ["CWE-862"], "access"), "SEC031": ("A08", ["API10"], [], ["CWE-345"], "integrity"),
+    "SEC032": ("A01", [], [], ["CWE-538"], "secrets"), "SEC033": ("A06", [], [], ["CWE-1104"], "components"),
+    "SEC034": ("A07", ["API10"], [], ["CWE-294"], "integrity"), "SEC035": ("A03", [], ["LLM01"], ["CWE-1427"], "ai"),
+    "SEC036": ("A03", [], ["LLM05"], ["CWE-1426"], "ai"), "SEC037": ("A07", ["API2"], [], ["CWE-613"], "auth"),
+    "SEC038": ("A01", ["API1"], [], ["CWE-284"], "access"), "SEC039": ("A01", ["API1"], [], ["CWE-639"], "access"),
+    "SEC040": ("A04", ["API5"], [], ["CWE-602"], "access"), "SEC041": ("A01", [], [], ["CWE-922"], "auth"),
+    "SEC042": ("A01", [], ["LLM02"], ["CWE-200"], "secrets"), "SEC043": ("A04", [], [], ["CWE-546"], "design"),
+}
+OWASP_TOP10 = {"A01": "Broken Access Control", "A02": "Cryptographic Failures", "A03": "Injection", "A04": "Insecure Design",
+               "A05": "Security Misconfiguration", "A06": "Vulnerable and Outdated Components",
+               "A07": "Identification and Authentication Failures", "A08": "Software and Data Integrity Failures",
+               "A09": "Security Logging and Monitoring Failures", "A10": "Server-Side Request Forgery"}
+OWASP_API = {"API1": "Broken Object Level Authorization", "API2": "Broken Authentication",
+             "API3": "Broken Object Property Level Authorization", "API4": "Unrestricted Resource Consumption",
+             "API5": "Broken Function Level Authorization", "API6": "Unrestricted Access to Sensitive Business Flows",
+             "API7": "Server Side Request Forgery", "API8": "Security Misconfiguration", "API9": "Improper Inventory Management",
+             "API10": "Unsafe Consumption of APIs"}
+OWASP_LLM = {"LLM01": "Prompt Injection", "LLM02": "Sensitive Information Disclosure", "LLM03": "Supply Chain",
+             "LLM04": "Data and Model Poisoning", "LLM05": "Improper Output Handling", "LLM06": "Excessive Agency",
+             "LLM07": "System Prompt Leakage", "LLM08": "Vector and Embedding Weaknesses", "LLM09": "Misinformation",
+             "LLM10": "Unbounded Consumption"}
+CWE_NAMES = {"CWE-22": "Path Traversal", "CWE-78": "OS Command Injection", "CWE-79": "Cross-site Scripting",
+             "CWE-89": "SQL Injection", "CWE-95": "Eval Injection", "CWE-200": "Exposure of Sensitive Information",
+             "CWE-209": "Error Message with Sensitive Information", "CWE-284": "Improper Access Control",
+             "CWE-294": "Authentication Bypass by Capture-replay", "CWE-295": "Improper Certificate Validation",
+             "CWE-319": "Cleartext Transmission", "CWE-338": "Weak PRNG", "CWE-345": "Insufficient Verification of Data Authenticity",
+             "CWE-347": "Improper Verification of Cryptographic Signature", "CWE-352": "Cross-Site Request Forgery",
+             "CWE-489": "Active Debug Code", "CWE-502": "Deserialization of Untrusted Data", "CWE-532": "Sensitive Information in Log File",
+             "CWE-538": "Sensitive Information in Accessible File", "CWE-546": "Suspicious Comment",
+             "CWE-601": "Open Redirect", "CWE-602": "Client-Side Enforcement of Server-Side Security",
+             "CWE-613": "Insufficient Session Expiration", "CWE-614": "Sensitive Cookie Without Secure", "CWE-639": "Authorization Bypass Through User-Controlled Key",
+             "CWE-798": "Hard-coded Credentials", "CWE-862": "Missing Authorization", "CWE-863": "Incorrect Authorization",
+             "CWE-915": "Mass Assignment", "CWE-916": "Weak Password Hash", "CWE-918": "Server-Side Request Forgery",
+             "CWE-922": "Insecure Storage of Sensitive Information", "CWE-942": "Permissive Cross-domain Policy",
+             "CWE-943": "NoSQL/Query Injection", "CWE-1004": "Sensitive Cookie Without HttpOnly", "CWE-1104": "Unmaintained Third-party Components",
+             "CWE-1426": "Improper Validation of Generative AI Output", "CWE-1427": "Improper Neutralization of Input Used for LLM Prompting"}
+CWE_TOP25_2024 = {"CWE-79", "CWE-787", "CWE-89", "CWE-352", "CWE-22", "CWE-125", "CWE-78", "CWE-416", "CWE-862", "CWE-434",
+                  "CWE-94", "CWE-20", "CWE-77", "CWE-287", "CWE-269", "CWE-502", "CWE-200", "CWE-863", "CWE-918", "CWE-119",
+                  "CWE-476", "CWE-798", "CWE-190", "CWE-400", "CWE-306"}
+# Compliance frameworks, mapped by weakness kind. Indicative only: a code scan does not demonstrate compliance.
+FRAMEWORKS = [
+    ("asvs", "OWASP ASVS 4.0.3", {
+        "access": ["V4 Access Control"], "crypto": ["V6 Stored Cryptography"], "secrets": ["V6 Stored Cryptography", "V14 Configuration"],
+        "transport": ["V9 Communication"], "injection": ["V5 Validation, Sanitization and Encoding"],
+        "design": ["V1 Architecture, Design and Threat Modeling"], "config": ["V14 Configuration"], "components": ["V14 Configuration"],
+        "auth": ["V2 Authentication", "V3 Session Management"], "integrity": ["V13 API and Web Service"],
+        "logging": ["V7 Error Handling and Logging"], "ssrf": ["V12 Files and Resources"], "ai": ["V5 Validation, Sanitization and Encoding"]}),
+    ("pci_dss", "PCI DSS 4.0", {
+        "access": ["6.2.4"], "crypto": ["6.2.4"], "secrets": ["8.6.2"], "transport": ["4.2.1"], "injection": ["6.2.4"],
+        "design": ["6.2.4"], "config": ["6.2.4"], "components": ["6.3.2"], "auth": ["8.3"], "integrity": ["6.2.4"],
+        "logging": ["10.2"], "ssrf": ["6.2.4"], "ai": ["6.2.4"]}),
+    ("soc2", "SOC 2 (Trust Services Criteria)", {
+        "access": ["CC6.1"], "crypto": ["CC6.1"], "secrets": ["CC6.1"], "transport": ["CC6.7"], "injection": ["CC6.6"],
+        "design": ["CC8.1"], "config": ["CC7.1"], "components": ["CC7.1"], "auth": ["CC6.1"], "integrity": ["CC6.6"],
+        "logging": ["CC7.2"], "ssrf": ["CC6.6"], "ai": ["CC6.6"]}),
+    ("iso27001", "ISO/IEC 27001:2022 Annex A", {
+        "access": ["A.8.3", "A.8.28"], "crypto": ["A.8.24"], "secrets": ["A.8.24", "A.8.28"], "transport": ["A.8.24"],
+        "injection": ["A.8.28"], "design": ["A.8.27"], "config": ["A.8.9"], "components": ["A.8.8"], "auth": ["A.8.5"],
+        "integrity": ["A.8.28"], "logging": ["A.8.15"], "ssrf": ["A.8.28"], "ai": ["A.8.28"]}),
+    ("nist_ssdf", "NIST SSDF (SP 800-218)", {
+        "access": ["PW.5"], "crypto": ["PW.5"], "secrets": ["PW.5"], "transport": ["PW.5"], "injection": ["PW.5"],
+        "design": ["PW.1"], "config": ["PW.9"], "components": ["PW.4", "RV.1"], "auth": ["PW.5"], "integrity": ["PW.5"],
+        "logging": ["PW.5"], "ssrf": ["PW.5"], "ai": ["PW.5"]}),
+]
+FRAMEWORK_REF_NAMES = {
+    "6.2.4": "Engineering techniques prevent common software attacks", "8.6.2": "No hard-coded passwords in code or config",
+    "4.2.1": "Strong cryptography for data in transit", "6.3.2": "Inventory of bespoke and third-party components",
+    "8.3": "Strong authentication", "10.2": "Audit logs",
+    "CC6.1": "Logical access security", "CC6.6": "Protection against external threats", "CC6.7": "Restricted transmission",
+    "CC7.1": "Detection of vulnerabilities and misconfigurations", "CC7.2": "Monitoring for anomalies", "CC8.1": "Change management",
+    "A.8.3": "Information access restriction", "A.8.5": "Secure authentication", "A.8.8": "Management of technical vulnerabilities",
+    "A.8.9": "Configuration management", "A.8.15": "Logging", "A.8.24": "Use of cryptography",
+    "A.8.27": "Secure system architecture and engineering principles", "A.8.28": "Secure coding",
+    "PW.1": "Design software to meet security requirements", "PW.4": "Reuse existing, well-secured software",
+    "PW.5": "Adhere to secure coding practices", "PW.9": "Secure settings by default", "RV.1": "Identify and confirm vulnerabilities",
+}
+STANDARDS_NOTE = ("Mappings are indicative: they show which requirements a lead relates to. A code scan alone does not "
+                  "demonstrate compliance with PCI DSS, SOC 2, ISO/IEC 27001, NIST SSDF or OWASP ASVS.")
+# Vibe-code review: mistakes that AI-generated ("vibe-coded") apps make most often.
+VIBE_CHECKS = [
+    ("V1", "Secret keys reachable from the browser", ["SEC023", "SEC042", "SEC012"]),
+    ("V2", "Tables or data rules open to every user", ["SEC030", "SEC022", "SEC038", "SEC039"]),
+    ("V3", "Authorization only in the UI", ["SEC040"]),
+    ("V4", "Security left as a TODO", ["SEC043"]),
+    ("V5", "Auth tokens in localStorage", ["SEC041"]),
+    ("V6", "Client can set protected fields", ["SEC019"]),
+    ("V7", "Unsigned or replayable webhooks", ["SEC031", "SEC034"]),
+    ("V8", "Wide-open CORS", ["SEC005"]),
+    ("V9", "Hard-coded credentials or exposed .env", ["SEC001", "SEC032"]),
+    ("V10", "SQL, NoSQL or shell built from strings", ["SEC003", "SEC029", "SEC013"]),
+    ("V11", "Untrusted text in prompts or run as code", ["SEC035", "SEC036"]),
+    ("V12", "Weak sessions or guessable tokens", ["SEC017", "SEC037", "SEC021"]),
+]
+
+
+def standards_for(rid):
+    owasp, api, llm, cwe, _ = STANDARDS.get(rid, (None, [], [], [], None))
+    return {"owasp": f"{owasp}:2021" if owasp else None, "owasp_api": [f"{a}:2023" for a in api],
+            "owasp_llm": [f"{l}:2025" for l in llm], "cwe": list(cwe)}
+
+
+def standards_summary(findings):
+    """Counts of source-code leads per standard item; items with no rule are listed as not checked."""
+    src = [f for f in findings if f["context"] == "source"]
+    def block(names, idx):
+        codes = (lambda v: [v[0]]) if idx == 0 else (lambda v: v[idx])
+        rows = []
+        for code, name in names.items():
+            rules = sorted(r for r, v in STANDARDS.items() if code in codes(v))
+            rows.append({"id": code, "name": name, "leads": sum(1 for f in src if f["id"] in rules),
+                         "rules": rules, "checked": bool(rules)})
+        return rows
+    cwe_counts = {}
+    for f in src:
+        for cwe in STANDARDS.get(f["id"], (None, [], [], [], None))[3]:
+            cwe_counts[cwe] = cwe_counts.get(cwe, 0) + 1
+    cwe = [{"id": c, "name": CWE_NAMES.get(c, c), "leads": n, "top25": c in CWE_TOP25_2024}
+           for c, n in sorted(cwe_counts.items(), key=lambda kv: (-kv[1], int(kv[0].split("-")[1])))]
+    kind_counts = {}
+    for f in src:
+        kind = STANDARDS.get(f["id"], (None, [], [], [], None))[4]
+        if kind:
+            kind_counts[kind] = kind_counts.get(kind, 0) + 1
+    frameworks = []
+    for key, title, mapping in FRAMEWORKS:
+        refs = {}
+        for kind, n in kind_counts.items():
+            for ref in mapping.get(kind, []):
+                refs[ref] = refs.get(ref, 0) + n
+        frameworks.append({"id": key, "name": title, "requirements": [
+            {"ref": r, "name": FRAMEWORK_REF_NAMES.get(r, ""), "leads": n} for r, n in sorted(refs.items(), key=lambda kv: (-kv[1], kv[0]))]})
+    return {"owasp_top10_2021": block(OWASP_TOP10, 0), "owasp_api_2023": block(OWASP_API, 1),
+            "owasp_llm_2025": block(OWASP_LLM, 2), "cwe": cwe, "frameworks": frameworks, "note": STANDARDS_NOTE}
+
+
+def vibe_summary(findings):
+    src = [f for f in findings if f["context"] == "source"]
+    return [{"id": vid, "title": title, "rules": rules, "leads": sum(1 for f in src if f["id"] in rules),
+             "status": "found" if any(f["id"] in rules for f in src) else "not found"} for vid, title, rules in VIBE_CHECKS]
+
+
 SECRET_GUIDANCE = {
     "SEC001": "Confirm whether the value is real. If so, rotate it, remove it from history, and load it from a secret store.",
     "SEC012": "Treat as exposed: rotate first, then purge from git history and move to a secret store.",
@@ -580,7 +751,7 @@ def fingerprint(f):
 def make_finding(rid, title, severity, confidence, controls, rel, line, evidence, guidance, context):
     f = {"id": rid, "title": title, "severity": severity, "confidence": confidence,
          "controls": list(controls), "status": "NEEDS_REVIEW", "file": rel, "line": line,
-         "evidence": evidence, "guidance": guidance, "context": context}
+         "evidence": evidence, "guidance": guidance, "context": context, "standards": standards_for(rid)}
     f["fingerprint"] = fingerprint(f)
     return f
 
@@ -786,6 +957,8 @@ def build_result(root, findings, state, baseline=None):
         "inventory": {"manifests": state["manifests"], "ecosystems": ecosystems, "recommended_tools": tools,
                       "security_packages": [{"package": p, "control": c, "role": r} for p, (c, r) in sorted(state["packages"].items())],
                       "env_files": state["env_files"], "test_files": state["test_files"], "ci_files": state["ci_files"]},
+        "standards": standards_summary(findings),
+        "vibe_review": vibe_summary(findings),
         "limitations": [
             "Regex heuristics only; false positives and false negatives are expected.",
             "No control is automatically marked PASS; signals show where to look, not that a control is enforced.",
@@ -804,6 +977,41 @@ def compare(findings, baseline):
     return {"new": [new[k] for k in new if k not in old],
             "resolved": [{k2: old[k][k2] for k2 in ("id", "title", "file", "line", "fingerprint")} for k in old if k not in new],
             "persisting": sum(1 for k in new if k in old)}
+
+
+def standards_tag(f):
+    st = f.get("standards") or {}
+    tags = ([st["owasp"].split(":")[0]] if st.get("owasp") else []) + [a.split(":")[0] for a in st.get("owasp_api", [])] + \
+        [l.split(":")[0] for l in st.get("owasp_llm", [])] + st.get("cwe", [])
+    return f" · {' · '.join(tags)}" if tags else ""
+
+
+def markdown_standards(result):
+    std = result["standards"]
+    out = ["", "## Vibe-code review", "",
+           "Mistakes that AI-generated apps make most often. \"Not found\" means no lead matched; it is not a pass.", "",
+           "| # | Check | Status | Leads in source | Rules |", "|---|---|---|---|---|"]
+    out += [f"| {v['id']} | {v['title']} | {'FOUND' if v['status'] == 'found' else 'not found'} | {v['leads']} | {', '.join(v['rules'])} |"
+            for v in result["vibe_review"]]
+    out += ["", "## Standards", "", std["note"], "", "### OWASP Top 10 (2021)", "",
+            "| ID | Category | Leads in source | Rules |", "|---|---|---|---|"]
+    out += [f"| {r['id']} | {r['name']} | {r['leads'] if r['checked'] else '—'} | {', '.join(r['rules']) or 'not checked by this scanner'} |"
+            for r in std["owasp_top10_2021"]]
+    for title, key in (("OWASP API Security Top 10 (2023)", "owasp_api_2023"), ("OWASP Top 10 for LLM Applications (2025)", "owasp_llm_2025")):
+        out += ["", f"### {title}", "", "| ID | Category | Leads in source | Rules |", "|---|---|---|---|"]
+        out += [f"| {r['id']} | {r['name']} | {r['leads'] if r['checked'] else '—'} | {', '.join(r['rules']) or 'not checked by this scanner'} |"
+                for r in std[key]]
+    out += ["", "### CWE", ""]
+    if std["cwe"]:
+        out += ["| CWE | Weakness | Leads in source | CWE Top 25 (2024) |", "|---|---|---|---|"]
+        out += [f"| {r['id']} | {r['name']} | {r['leads']} | {'yes' if r['top25'] else ''} |" for r in std["cwe"]]
+    else:
+        out.append("No CWE-mapped leads in source code.")
+    out += ["", "### Compliance frameworks (related requirements)", ""]
+    for fw in std["frameworks"]:
+        reqs = ", ".join(f"{r['ref']} {r['name']} ({r['leads']})" if r["name"] else f"{r['ref']} ({r['leads']})" for r in fw["requirements"])
+        out.append(f"- **{fw['name']}:** {reqs or 'no related leads in source code'}")
+    return out
 
 
 def md_escape(text):
@@ -846,7 +1054,7 @@ def markdown(root, findings, state=None, result=None):
                 for f in items:
                     ctx = "" if f["context"] == "source" else f" _({f['context']})_"
                     label = f" {f['title']}" if f["title"] != heading else ""
-                    out.append(f"- {f['severity']}{label} — `{f['file']}:{f['line']}`{ctx} — `{md_escape(f['evidence'])}`")
+                    out.append(f"- {f['severity']}{label} — `{f['file']}:{f['line']}`{ctx} — `{md_escape(f['evidence'])}`{standards_tag(f)}")
                 out.append("")
     out += ["## Control coverage", "",
             "Status stays NOT VERIFIED until enforcement and tests are confirmed in code. "
@@ -859,6 +1067,7 @@ def markdown(root, findings, state=None, result=None):
                ("none found — check for a gap" if sig and not sig["locations"] else
                 ", ".join(f"`{l}`" for l in (sig["locations"][:3] if sig else []))))
         out.append(f"| {c['id']} | {c['name']} | NOT VERIFIED | {c['lead_count']} | {sig_text} | {look} |")
+    out += markdown_standards(result)
     inv = result["inventory"]
     out += ["", "## Inventory", "",
             f"- Dependency manifests: {', '.join(f'`{m}`' for m in inv['manifests']) or 'none found'}",

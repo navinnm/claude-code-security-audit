@@ -201,6 +201,47 @@ class ModernControlTests(ScanCase):
         self.assertIn("SEC026", self.ids("main.tf", 'member = "allUsers"\n'))
 
 
+class StandardsAndVibeTests(ScanCase):
+    def test_vibe_coding_rules(self):
+        self.assertIn("SEC040", self.ids("app/admin.tsx", "if (user.role === 'admin') { showPanel() }\n"))
+        self.assertIn("SEC040", self.ids("a.js", "const isAdmin = localStorage.getItem('isAdmin')\n"))
+        self.assertIn("SEC041", self.ids("b.js", "localStorage.setItem('access_token', t)\n"))
+        self.assertIn("SEC042", self.ids("c.ts", "const ai = new OpenAI({ apiKey, dangerouslyAllowBrowser: true })\n"))
+        self.assertIn("SEC043", self.ids("d.py", "# TODO: add auth before launch\n"))
+        self.assertIn("SEC043", self.ids("e.js", "// skip auth for now\n"))
+        self.assertEqual(self.ids("f.js", "// TODO: refactor this loop\n"), [])
+
+    def test_every_finding_carries_standards(self):
+        write(self.root, "app.py", 'cur.execute(f"SELECT * FROM t WHERE id = {uid}")\n')
+        f = scan_module.scan(self.root)[0]
+        self.assertEqual(f["standards"], {"owasp": "A03:2021", "owasp_api": [], "owasp_llm": [], "cwe": ["CWE-89"]})
+        for rid in [r.rid for r in scan_module.RULES] + ["SEC001", "SEC012", "SEC030", "SEC031", "SEC032", "SEC033", "SEC034", "SEC038", "SEC039"]:
+            self.assertIn(rid, scan_module.STANDARDS, f"{rid} has no standards mapping")
+
+    def test_standards_and_vibe_summary(self):
+        write(self.root, "server.js", "db.query(`SELECT * FROM u WHERE id = ${req.params.id}`)\napp.use(cors({ origin: true }))\n")
+        write(self.root, "tests/t.js", "eval(x)\n")
+        state = {}
+        result = scan_module.build_result(self.root, scan_module.scan(self.root, state), state)
+        top10 = {r["id"]: r for r in result["standards"]["owasp_top10_2021"]}
+        self.assertEqual(top10["A03"]["leads"], 1, "test-file eval is not counted")
+        self.assertEqual(top10["A05"]["leads"], 1)
+        self.assertEqual(len(top10), 10)
+        api = {r["id"]: r for r in result["standards"]["owasp_api_2023"]}
+        self.assertFalse(api["API4"]["checked"])
+        self.assertEqual(result["standards"]["cwe"][0], {"id": "CWE-89", "name": "SQL Injection", "leads": 1, "top25": True})
+        pci = next(f for f in result["standards"]["frameworks"] if f["id"] == "pci_dss")
+        self.assertEqual(pci["requirements"][0]["ref"], "6.2.4")
+        vibe = {v["id"]: v for v in result["vibe_review"]}
+        self.assertEqual((vibe["V8"]["status"], vibe["V10"]["status"], vibe["V3"]["status"]), ("found", "found", "not found"))
+        report = scan_module.markdown(self.root, result["findings"], state, result)
+        for heading in ("## Vibe-code review", "### OWASP Top 10 (2021)", "### OWASP API Security Top 10 (2023)",
+                        "### OWASP Top 10 for LLM Applications (2025)", "### CWE", "### Compliance frameworks"):
+            self.assertIn(heading, report)
+        self.assertIn("· A03 · CWE-89", report)
+        self.assertIn("does not demonstrate compliance", report)
+
+
 class BehaviourTests(ScanCase):
     def test_skips_node_modules(self):
         write(self.root, "node_modules/bad.js", "eval(userInput)\n")

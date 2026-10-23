@@ -17,6 +17,12 @@ The bugs that hurt SaaS companies most are **authorization bugs at trust boundar
 
 A control is marked PASS only on evidence (enforcement located, every entry point covered, server-side, and tested), never because the scanner found nothing.
 
+## Standards and vibe-code review
+
+Every finding is tagged with **OWASP Top 10 (2021)**, **OWASP API Security Top 10 (2023)**, **OWASP Top 10 for LLM Applications (2025)** and **CWE** IDs (with CWE Top 25 flags). Reports also relate leads to **OWASP ASVS 4.0.3, PCI DSS 4.0, SOC 2, ISO/IEC 27001:2022 and NIST SSDF** requirements, and include a 12-point **vibe-code review** of the mistakes AI-generated apps make most often (secrets in the browser, tables without RLS, authorization only in the UI, `// TODO: add auth`, tokens in localStorage, and more).
+
+Mappings are indicative: a code scan alone does not demonstrate compliance, and "not found" is never reported as "passed".
+
 ## Example findings
 
 | Finding | Control |

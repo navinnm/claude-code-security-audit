@@ -47,6 +47,9 @@ Confidence is separate from severity: `confirmed` (exploit path traced end to en
 - Regression test: <test name/file, or the test to write>
 - Status: OPEN | FIXED (verified) | PARTIALLY FIXED | NOT VERIFIED
 
+## Standards & vibe-code review
+Copy the scanner's `standards` and `vibe_review` JSON into tables: OWASP Top 10 / API Top 10 / LLM Top 10 with confirmed (not just heuristic) counts, CWE IDs per finding, and related ASVS, PCI DSS, SOC 2, ISO 27001 and NIST SSDF requirements. State that the mapping does not demonstrate compliance.
+
 ## Scanner leads dismissed
 | Lead | Location | Why dismissed |
 |---|---|---|
