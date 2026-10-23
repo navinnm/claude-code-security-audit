@@ -779,7 +779,9 @@ def build_result(root, findings, state, baseline=None):
         "root": str(root), "mode": "read-only-local-heuristics",
         "stats": {"files_scanned": state["files_scanned"], "skipped_large_lines": state["skipped_large_lines"],
                   "findings": len(findings), "suppressed": len(state["suppressed"]),
-                  "by_severity": {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITY_RANK}},
+                  "by_severity": {s: sum(1 for f in findings if f["severity"] == s) for s in SEVERITY_RANK},
+                  "by_severity_source": {s: sum(1 for f in findings if f["severity"] == s and f["context"] == "source")
+                                         for s in SEVERITY_RANK}},
         "findings": findings, "suppressed": state["suppressed"], "controls": controls,
         "inventory": {"manifests": state["manifests"], "ecosystems": ecosystems, "recommended_tools": tools,
                       "security_packages": [{"package": p, "control": c, "role": r} for p, (c, r) in sorted(state["packages"].items())],
@@ -819,9 +821,12 @@ def markdown(root, findings, state=None, result=None):
            f"- **Files scanned:** {stats['files_scanned']}",
            "- **Interpretation:** Every finding is a lead to validate in code, not a confirmed vulnerability.",
            "- **Coverage:** No control is automatically marked PASS.", "",
-           "## Summary", "", "| Severity | Leads |", "|---|---|"]
-    out += [f"| {s} | {n} |" for s, n in stats["by_severity"].items()]
-    out += ["", f"Suppressed inline: {stats['suppressed']}. Findings in test paths or gitignored local env files are marked by context.", ""]
+           "## Summary", "", "| Severity | In source code | All leads |", "|---|---|---|"]
+    out += [f"| {s} | {stats['by_severity_source'][s]} | {n} |" for s, n in stats["by_severity"].items()]
+    other = stats["findings"] - sum(stats["by_severity_source"].values())
+    out += ["", f"**In source code** excludes {other} lead(s) in test paths or gitignored local env files; "
+            "those stay listed below, marked by context. "
+            f"Suppressed inline: {stats['suppressed']}.", ""]
     if not findings:
         out += ["No heuristic matches detected. This does **not** mean the project is secure.", ""]
     else:

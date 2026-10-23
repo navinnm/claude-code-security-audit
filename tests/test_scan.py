@@ -206,6 +206,17 @@ class BehaviourTests(ScanCase):
         write(self.root, "node_modules/bad.js", "eval(userInput)\n")
         self.assertEqual(scan_module.scan(self.root), [])
 
+    def test_summary_separates_source_from_tests(self):
+        write(self.root, "app.py", "eval(x)\n")
+        write(self.root, "tests/test_app.py", "eval(y)\nexec(z)\n")
+        state = {}
+        result = scan_module.build_result(self.root, scan_module.scan(self.root, state), state)
+        self.assertEqual(result["stats"]["by_severity"]["High"], 3)
+        self.assertEqual(result["stats"]["by_severity_source"]["High"], 1)
+        report = scan_module.markdown(self.root, result["findings"], state, result)
+        self.assertIn("| High | 1 | 3 |", report)
+        self.assertIn("excludes 2 lead(s) in test paths", report)
+
     def test_own_reports_are_not_rescanned(self):
         write(self.root, "a.py", "eval(x)\n")
         with contextlib.redirect_stdout(io.StringIO()):
