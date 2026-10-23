@@ -74,6 +74,25 @@ Suppression: add `security-audit: ignore[SEC002] -- reason` on the line or the l
 
 IDs SEC008–SEC010 (v0.1 upload/webhook/admin keyword matches) are retired. Those areas are now covered by control signals and SEC031/SEC034.
 
+## Data and privacy
+
+See the full [Privacy Policy](PRIVACY.md).
+
+- **No service, no retention.** The plugin has no backend. The scanner (`scripts/scan.py`) runs locally, makes no network requests, and reads no environment variables or credentials.
+- **What it reads:** files in the repository you point it at. These can incidentally contain personal data (seed data, fixtures, author names). Findings go only to your terminal or to a local `security-reports/` folder. Secret values are redacted, and the audit instructions tell Claude to leave customer data out of reports.
+- **Third-party services (only with your approval):** during an audit, Claude may suggest running dependency or static-analysis tools that you have installed. Some of them contact their vendor, so Claude asks before running any of them:
+
+| Tool | Service contacted | What is sent |
+|---|---|---|
+| `npm audit` | npm registry (registry.npmjs.org) | Dependency names and versions from your lockfile |
+| `pip-audit` | PyPI / OSV vulnerability database | Python dependency names and versions |
+| `osv-scanner` | OSV.dev (Google) | Dependency names and versions |
+| `bundle-audit --update`, `govulncheck`, `cargo audit`, `composer audit` | Their ecosystem advisory databases | Dependency names and versions (or a database download) |
+| `semgrep` with a registry ruleset (e.g. `p/owasp-top-ten`) | semgrep.dev (rule download; metrics can be disabled with `--metrics off`) | Rule requests; code stays local |
+| `trivy` | Its vulnerability database host | Database download |
+
+`gitleaks` runs fully offline. If you decline these tools, the audit marks dependency checks NOT VERIFIED rather than skipping them silently.
+
 ## Requirements
 - Claude Code with plugin support.
 - Python 3.9+.
@@ -92,3 +111,7 @@ python3 -m unittest discover -s tests
 ```
 
 The scanner is read-only, does not execute target code, and makes no network requests. It never marks a control PASS.
+
+## Privacy
+
+[Privacy Policy](PRIVACY.md) · [MIT License](LICENSE)

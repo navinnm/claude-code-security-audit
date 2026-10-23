@@ -6,5 +6,6 @@
     "name": "Fulgid Software Solutions Pvt Ltd"
   },
   "license": "MIT",
-  "repository": "https://github.com/navinnm/claude-code-security-audit"
+  "repository": "https://github.com/navinnm/claude-code-security-audit",
+  "privacyPolicyUrl": "https://github.com/navinnm/claude-code-security-audit/blob/main/PRIVACY.md"
 }
