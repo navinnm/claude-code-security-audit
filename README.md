@@ -2,10 +2,14 @@
 
 **A Claude Code plugin that audits SaaS codebases for the security bugs that actually leak customer data:** cross-tenant access, IDOR/BOLA, missing Supabase row-level security (RLS), leaked secrets, SQL injection, permissive CORS, and unsigned webhooks. It maps every finding to 19 OWASP-aligned controls, then helps you fix each one with a regression test. It runs locally and read-only, with zero dependencies.
 
-```bash
-git clone https://github.com/<your-org>/claude-code-security-audit.git
-claude --plugin-dir ./claude-code-security-audit   # then run /saas-security-audit:audit in your app repo
+Install inside Claude Code:
+
 ```
+/plugin marketplace add navinnm/claude-code-security-audit
+/plugin install saas-security-audit@claude-code-security-audit
+```
+
+Then open your app repository and run `/saas-security-audit:audit`.
 
 ## Why this exists
 

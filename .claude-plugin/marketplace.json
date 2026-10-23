@@ -1,0 +1,15 @@
+{
+  "name": "claude-code-security-audit",
+  "owner": {
+    "name": "Fulgid Software Solutions Pvt Ltd"
+  },
+  "description": "Security audit plugins for SaaS codebases in Claude Code.",
+  "plugins": [
+    {
+      "name": "saas-security-audit",
+      "source": "./",
+      "description": "SaaS security audit for Claude Code: tenant isolation, IDOR/BOLA, Supabase RLS, secrets, SQL injection, CORS, and webhook checks mapped to 19 controls.",
+      "version": "0.2.0"
+    }
+  ]
+}
