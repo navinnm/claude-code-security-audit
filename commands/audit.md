@@ -14,7 +14,7 @@ Scope: $ARGUMENTS
 5. Treat scanner output as leads, not proof. Start tracing each control from the "Look first" locations. "None found" for a control usually means a gap or a custom implementation.
 6. Run installed optional tools from the scanner's inventory. Ask first for anything that needs network access. Record commands, versions, and exit codes, and list skipped tools.
 7. Dispatch the `security-reviewer` agent in parallel, once per high-risk area that exists in this repo (auth/session, tenancy/IDOR, billing and webhooks, uploads/storage, admin). Reconcile its results with your own.
-8. Assess all 19 controls against the checklist's PASS bar, with exactly one status each.
+8. Assess all 22 controls against the checklist's PASS bar, with exactly one status each.
 9. Write `security-reports/security-audit.md` per the template, including the dismissed-leads table. Redact secrets and exclude customer data.
 10. Do not run destructive commands, access production, deploy, or install packages.
 11. Finish in chat with: the readiness decision, confirmed counts by severity, the top fixes in remediation order, and coverage limitations. No heuristic findings does not mean the project is secure.

@@ -1,12 +1,12 @@
 ---
 name: security-audit
-description: Evidence-based SaaS security audit, remediation, and verification against 19 controls (tenant isolation, route auth, IDOR/BOLA, RLS, injection, CORS, cookies, uploads, webhooks, secrets, dependencies, headers). Use when asked to security-review, audit, pentest-prep, harden, or check release readiness of a SaaS/web app repository.
+description: Evidence-based SaaS security audit, remediation, and verification against 22 controls (tenant isolation, route auth, IDOR/BOLA, RLS, injection, CORS, cookies, uploads, webhooks, secrets, dependencies, headers, SSRF, JWT sessions, AI/LLM prompt injection). Use when asked to security-review, audit, pentest-prep, harden, or check release readiness of a SaaS/web app repository.
 ---
 
 # SaaS Security Audit Skill
 
 Canonical references (read them, don't paraphrase from memory):
-- `${CLAUDE_PLUGIN_ROOT}/references/security-checklist.md`: the 19 controls, what to inspect, the PASS bar, common failures, and regression tests.
+- `${CLAUDE_PLUGIN_ROOT}/references/security-checklist.md`: the 22 controls, what to inspect, the PASS bar, common failures, and regression tests.
 - `${CLAUDE_PLUGIN_ROOT}/references/report-template.md`: the severity rubric, confidence levels, and report structure.
 
 ## Core idea
@@ -33,7 +33,7 @@ A SaaS app's most damaging bugs are **authorization bugs at trust boundaries**: 
    - **Tenant model:** what a tenant is, where the tenant ID comes from (session or request), and how queries get scoped (RLS, ORM scope, manual `where`).
 2. **Scan.** `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/scan.py" --root . --format json --output security-reports/scan-baseline.json`, then the Markdown form for reading. Use the **Control coverage** table's "Look first" locations as starting points, and treat "none found" as a likely gap.
 3. **Run optional tools** from the scanner's inventory, only if installed. Ask first when a tool needs network access. Record the exact command, version, and exit code.
-4. **Trace.** For each control in the checklist, follow untrusted input from the entry point through controllers and services to the data access, and check enforcement at each boundary. Prioritize C1, C2, C9, C3, C14, and C19, since these produce Critical/High findings in SaaS.
+4. **Trace.** For each control in the checklist, follow untrusted input from the entry point through controllers and services to the data access, and check enforcement at each boundary. Prioritize C1, C2, C9, C3, C14, C19, and C20, since these produce Critical/High findings in SaaS.
 5. **Independent review (C17).** Dispatch the `security-reviewer` agent in parallel, once per high-risk area (auth/session, tenancy/IDOR, billing and webhooks, uploads/storage, admin). Give each only its scope and the relevant checklist section. Reconcile disagreements with evidence.
 6. **Triage scanner leads.** Each lead becomes a finding (with severity per the rubric) or a dismissed lead with a one-line reason.
 7. **Report** per the template to `security-reports/security-audit.md`. Don't include customer data or secret values.
@@ -52,7 +52,7 @@ A SaaS app's most damaging bugs are **authorization bugs at trust boundaries**: 
 - Separate source-level verification from deployment/runtime verification (headers, TLS, bucket policy, edge CORS).
 
 ## Release readiness
-- `READY`: no open Critical/High findings; C1, C2, C3, C9, C14, and C19 (where applicable) are PASS; and the required tests ran.
+- `READY`: no open Critical/High findings; C1, C2, C3, C9, C14, C19, and C22 (where applicable) are PASS; and the required tests ran.
 - `READY WITH CONDITIONS`: no open Critical/High findings, but listed controls are PARTIAL or NOT VERIFIED, with owners and actions.
 - `NOT READY`: any open Critical/High finding, or C1, C2, or C9 not verified in a multi-tenant app.
 

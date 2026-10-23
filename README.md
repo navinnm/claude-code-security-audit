@@ -1,6 +1,6 @@
 # Claude Code Security Audit — SaaS & Supabase Security Scanner
 
-**A Claude Code plugin that audits SaaS codebases for the security bugs that actually leak customer data:** cross-tenant access, IDOR/BOLA, missing Supabase row-level security (RLS), leaked secrets, SQL injection, permissive CORS, and unsigned webhooks. It maps every finding to 19 OWASP-aligned controls, then helps you fix each one with a regression test. It runs locally and read-only, with zero dependencies.
+**A Claude Code plugin that audits SaaS codebases for the security bugs that actually leak customer data:** cross-tenant access, IDOR/BOLA, missing Supabase row-level security (RLS), leaked secrets, SQL injection, permissive CORS, and unsigned webhooks. It maps every finding to 22 OWASP-aligned controls (including SSRF, JWT session lifecycle, and AI/LLM prompt injection), then helps you fix each one with a regression test. It runs locally and read-only, with zero dependencies.
 
 Install inside Claude Code:
 
@@ -31,10 +31,13 @@ A control is marked PASS only on evidence (enforcement located, every entry poin
 | `` db.query(`SELECT … ${id}`) `` and `"SELECT …" + id` | SQL injection |
 | Live `sk_live_` / AWS keys committed in `.env.production` | Secret scanning |
 | `rejectUnauthorized: false`, `Math.random()` reset tokens, `jwt.decode` without verify | Transport / auth |
+| `` systemPrompt = `…${req.body.notes}` `` and `db.query(completion.choices[0].message.content)` | AI / LLM prompt injection |
+| `jwt.verify(token, secret)` with no algorithm pin, `expiresIn: "365d"` | JWT session lifecycle |
+| `requests.get(request.args['url'])` | SSRF |
 
 ## Works with
 
-Next.js, Express, NestJS, Fastify, Hono, Django, Flask, FastAPI, Rails, Laravel, Go, and more. Data-layer checks cover Supabase/Postgres RLS policies, Firebase security rules, MongoDB/Mongoose query injection, and S3 bucket ACLs.
+Next.js, Express, NestJS, Fastify, Hono, Django, Flask, FastAPI, Rails, Laravel, Go, and more. Data-layer checks cover Supabase/Postgres RLS policies, Drizzle RLS, Prisma tenant keys, Firebase security rules, MongoDB/Mongoose query injection, and S3/GCS bucket ACLs. AI checks cover OpenAI, Anthropic, Vercel AI SDK, and LangChain code paths.
 
 **Limitations:** This is a security-assessment aid, not a penetration-testing suite or certification. Static heuristics produce false positives and miss vulnerabilities. Human review and application-specific tests remain necessary.
 
@@ -46,7 +49,7 @@ Next.js, Express, NestJS, Fastify, Hono, Django, Flask, FastAPI, Rails, Laravel,
 
 ## Layout
 - `skills/security-audit/SKILL.md`: methodology, statuses, and readiness rules.
-- `references/security-checklist.md`: the canonical 19-control playbook (inspect / PASS needs / common failures / regression test).
+- `references/security-checklist.md`: the canonical 22-control playbook (inspect / PASS needs / common failures / regression test).
 - `references/report-template.md`: severity rubric and report structure.
 - `agents/security-reviewer.md`: read-only reviewer, dispatched once per high-risk area.
 - `scripts/scan.py`: dependency-free scanner (Python 3.9+).
@@ -60,8 +63,8 @@ python3 scripts/scan.py --root . --min-severity medium --fail-on high  # CI gate
 ```
 
 What it reports:
-- **Line leads (SEC001–SEC029):** secrets (provider formats, Supabase `service_role` JWTs, connection-URL passwords, `.env*` files), SQL/NoSQL injection, command execution, unsafe deserialization, XSS sinks, SSRF, open redirect, path traversal, mass assignment, permissive CORS, disabled TLS verification, weak JWT verification, CSRF disabled, weak password hashing, insecure randomness, permissive RLS/Firebase rules, public buckets, debug mode, and stack traces in responses.
-- **Repo leads (SEC030–SEC034):** tables without RLS in RLS-based apps, webhook handlers without signature verification or idempotency, env files not gitignored, manifests without lockfiles.
+- **Line leads (SEC001–SEC029, SEC035–SEC037):** secrets (provider formats, Supabase `service_role` JWTs, connection-URL passwords, `.env*` files), SQL/NoSQL injection, command execution, unsafe deserialization, XSS sinks, SSRF, open redirect, path traversal, mass assignment, permissive CORS, disabled TLS verification, weak JWT verification, CSRF disabled, weak password hashing, insecure randomness, permissive RLS/Firebase rules, public buckets, debug mode, stack traces in responses, untrusted input in LLM system prompts, LLM output reaching execution/query sinks, JWT algorithm confusion, and long-lived tokens.
+- **Repo leads (SEC030–SEC034, SEC038–SEC039):** tables without RLS in RLS-based apps (SQL migrations and Drizzle), RLS enabled with no policies, Prisma models missing a tenant key, webhook handlers without signature verification or idempotency, env files not gitignored, manifests without lockfiles.
 - **Control signals:** for each control, where enforcement probably lives (auth middleware, tenant scoping, ID lookups to check for IDOR, rate limiters, headers, and so on), with source/test hit counts. Zero signals for a control is a strong hint of a gap.
 - **Inventory:** manifests, security-relevant packages, test and CI files, and the dependency/secret tools to run (marked installed or not, and network-dependent or offline).
 

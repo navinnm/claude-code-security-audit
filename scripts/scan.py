@@ -16,8 +16,8 @@ import shutil
 import sys
 from pathlib import Path
 
-VERSION = "0.2.0"
-SCHEMA_VERSION = 2
+VERSION = "0.3.0"
+SCHEMA_VERSION = 3
 
 SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "venv", "env", "node_modules", "vendor",
              "dist", "build", "coverage", ".next", ".nuxt", ".output", ".svelte-kit",
@@ -29,7 +29,7 @@ CODE_EXTS = {".py", ".php", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".java
              ".svelte", ".html", ".htm", ".erb", ".ejs", ".hbs", ".njk", ".jinja",
              ".jinja2", ".j2", ".twig"}
 CONFIG_EXTS = {".yml", ".yaml", ".json", ".toml", ".ini", ".cfg", ".conf", ".config",
-               ".xml", ".tf", ".tfvars", ".properties", ".rules", ".env"}
+               ".xml", ".tf", ".tfvars", ".properties", ".rules", ".env", ".prisma"}
 SQL_EXTS = {".sql"}
 DOC_EXTS = {".md", ".txt", ".rst"}
 CONFIG_NAMES = {"Dockerfile", "Procfile", "Makefile", "Caddyfile", ".htaccess",
@@ -82,6 +82,9 @@ CONTROLS = [
     "Independent AI-assisted review",
     "Security headers",
     "Webhook authenticity, replay protection, and idempotency",
+    "SSRF and outbound egress control",
+    "JWT and session lifecycle security",
+    "AI/LLM security and prompt injection",
 ]
 
 JS = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"}
@@ -187,10 +190,12 @@ RULES = [
           r"\bcheck_hostname\s*=\s*False\b", r"\bstrictSSL\s*:\s*false\b", r"\bVERIFY_NONE\b",
           r"ServerCertificateValidationCallback\s*=[^;\n]*=>\s*true"],
          "Keep certificate verification on; trust a private CA explicitly instead of disabling checks."),
-    Rule("SEC017", "JWT verification weakened or decoded without verification", "High", "medium", (2,), CODE,
+    Rule("SEC017", "JWT verification weakened or decoded without verification", "High", "medium", (21, 2), CODE,
          [r"[\"']?verify_signature[\"']?\s*:\s*False", r"[\"']?verify_exp[\"']?\s*:\s*False",
           r"(?i)\balgorithms?\s*[:=]\s*\[?\s*[\"']none[\"']", r"\bjwt\.decode\s*\([^)\n]*verify\s*=\s*False",
-          r"\bignoreExpiration\s*:\s*true\b", (r"\bjwt\.decode\s*\(|\bdecodeJwt\s*\(", JS)],
+          r"\bignoreExpiration\s*:\s*true\b", (r"\bjwt\.decode\s*\(|\bdecodeJwt\s*\(", JS),
+          (r"\bjwt\.verify\s*\(\s*[^,()]+,\s*[^,()]+\s*\)", JS),
+          r"(?i)\balgorithms?\s*[:=]\s*\[[^\]\n]*HS\d{3}[^\]\n]*(?:RS|ES|PS)\d{3}|\balgorithms?\s*[:=]\s*\[[^\]\n]*(?:RS|ES|PS)\d{3}[^\]\n]*HS\d{3}"],
          "Verify signature, algorithm allowlist, expiry, issuer, and audience before trusting any claim."),
     Rule("SEC018", "CSRF protection disabled", "Medium", "medium", (3,), CODE_CFG,
          [r"@csrf_exempt\b|\bcsrf_exempt\s*\(", r"\bWTF_CSRF_ENABLED\s*=\s*False",
@@ -209,7 +214,7 @@ RULES = [
           (r"\b(?:fill|forceFill|create|update)\s*\(\s*\$request->(?:all|input)\(\)", {".php"}),
           (r"\bparams\.permit!", {".rb"})],
          "Bind an explicit field allowlist; tenant_id, owner_id, role, and plan must come from the server-side session."),
-    Rule("SEC020", "Outbound request to a request-controlled URL (possible SSRF)", "High", "low", (5,), CODE,
+    Rule("SEC020", "Outbound request to a request-controlled URL (possible SSRF)", "High", "low", (20, 5), CODE,
          [r"\b(?:requests|httpx)\.(?:get|post|put|patch|delete|head|request|stream)\s*\(\s*" + REQ_SRC,
           r"\burlopen\s*\(\s*" + REQ_SRC,
           (r"\b(?:fetch|axios(?:\.(?:get|post|put|request))?|got(?:\.\w+)?|needle|https?\.(?:get|request))\s*\(\s*(?:`\$\{\s*)?" + REQ_SRC, JS),
@@ -241,7 +246,8 @@ RULES = [
          "Return a generic error with a correlation ID; log details server-side."),
     Rule("SEC026", "Public storage bucket or object ACL", "High", "medium", (13,), {"code", "config", "sql"},
          [r"(?i)[\"']?acl[\"']?\s*[:=]\s*[\"']public-read(?:-write)?[\"']", r"\bBlockPublic(?:Acls|Policy)\s*[:=]\s*false\b",
-          r"\bblock_public_(?:acls|policy)\s*=\s*false\b", r"(?i)createBucket\s*\([^)\n]*public\s*:\s*true",
+          r"\bblock_public_(?:acls|policy)\s*=\s*false\b", r"[\"']allUsers[\"']|\ballUsers\b|[\"']allAuthenticatedUsers[\"']",
+          r"(?i)\bpredefined_acl\s*=\s*[\"']publicRead", r"(?i)createBucket\s*\([^)\n]*public\s*:\s*true",
           r"(?i)insert\s+into\s+storage\.buckets[^;\n]*\btrue\b"],
          "Keep tenant files private; serve them through short-lived signed URLs after an authorization check."),
     Rule("SEC027", "Redirect to a request-controlled URL (possible open redirect)", "Medium", "low", (5,), CODE,
@@ -256,6 +262,20 @@ RULES = [
          [(r"\.(?:find|findOne|where|updateOne|updateMany|deleteOne|deleteMany|countDocuments)\s*\(\s*(?:req|request)\.(?:body|query)\b", JS),
           r"[\"']\$where[\"']"],
          "Validate types (reject objects where strings are expected) and build query filters from explicit fields."),
+    Rule("SEC035", "Untrusted input interpolated into an LLM system prompt", "Medium", "low", (22,), CODE,
+         [r"(?i)\b(?:system_?prompt|systemPrompt|system_message|instructions)\s*[:=]\s*(?:f[\"']|`)[^\n]*(?:\{|\$\{)\s*(?:req|request|user|input|body|query|params|doc|document|page|email|content)",
+          r"(?i)role\s*[:=]\s*[\"']system[\"'][^\n]*content\s*[:=]\s*(?:f[\"']|`)[^\n]*(?:\{|\$\{)\s*(?:req|request|user|input|body|query|params)"],
+         "Keep untrusted text out of the system prompt; pass it as delimited user content and treat model output as untrusted."),
+    Rule("SEC036", "LLM output passed to an execution or query sink", "High", "low", (22, 5), CODE,
+         [r"(?i)\b(?:eval|exec|execSync|query|execute|raw|system|subprocess\.\w+)\s*\(\s*(?:\w+\.)?(?:completion|response|result|output|answer|message|llm\w*|ai\w*)"
+          r"(?:\.(?:content|text|output_text|choices|message))+",
+          r"(?i)\b(?:fetch|requests\.get|axios\.get)\s*\(\s*(?:\w+\.)?(?:completion|response|output|llm\w*)(?:\.(?:content|text|output_text))+"],
+         "Never execute, query, or fetch model output directly; validate it against a strict schema and an allowlist of actions."),
+    Rule("SEC037", "Long-lived token or session lifetime", "Medium", "low", (21,), CODE_CFG,
+         [r"(?i)\bexpiresIn\s*:\s*[\"']?(?:\d{3,}d|\d+y|[3-9]\dd|\d{7,}[\"']?\s*[,}])",
+          r"(?i)\b(?:ACCESS_TOKEN_EXPIRE\w*|JWT_EXPIRATION\w*|SESSION_COOKIE_AGE)\s*=\s*(?:timedelta\(\s*days\s*=\s*(?:[3-9]\d|\d{3,})|\d{7,})",
+          r"(?i)\bmaxAge\s*:\s*(?:\d{10,}|[3-9]\d\s*\*\s*24\s*\*\s*60\s*\*\s*60(?:\s*\*\s*1000)?|\d{3,}\s*\*\s*24\s*\*\s*60\s*\*\s*60)"],
+         "Keep access tokens short (minutes), rotate refresh tokens on use, and revoke sessions server-side on password or role change."),
 ]
 
 SECRET_FORMATS = [
@@ -310,6 +330,9 @@ CONTROL_SIGNALS = {
     16: r"(?i)\b(?:multer|formidable|busboy|UploadFile|FileField|ImageField|move_uploaded_file|request\.files|upload\.(?:single|array|fields)|multipart/form-data)\b",
     18: r"(?i)\bhelmet\b|Content-Security-Policy|X-Frame-Options|X-Content-Type-Options|Referrer-Policy|Permissions-Policy|SecurityMiddleware|secure_headers",
     19: r"(?i)webhook",
+    20: r"(?i)\b(?:fetch|axios(?:\.\w+)?|got|requests\.(?:get|post|request)|httpx\.\w+|urlopen|http\.Get|HttpClient|curl_init)\s*\(\s*(?![\"'`]https?://)[\w$`]",
+    21: r"(?i)\b(?:expiresIn|maxAge|refresh_?token|ACCESS_TOKEN_EXPIRE\w*|SESSION_COOKIE_AGE|revoke\w*|rotate\w*Token|jwt\.(?:sign|verify)|jwtVerify|SignJWT)\b",
+    22: r"(?i)\b(?:openai|anthropic|@ai-sdk|langchain|llamaindex|generateText|streamText|chat\.completions|messages\.create|responses\.create|ChatOpenAI|ChatAnthropic|ollama)\b",
 }
 CONTROL_SIGNALS = {k: re.compile(v) for k, v in CONTROL_SIGNALS.items()}
 
@@ -319,10 +342,6 @@ WEBHOOK_VERIFY_RE = re.compile(r"(?i)constructEvent|verifyHeader|validateRequest
                                r"timingSafeEqual|compare_digest|hash_equals|secure_compare|\bsvix\b|new\s+Webhook\s*\(|webhooks?\.verify|"
                                r"x-hub-signature|stripe-signature|x-slack-signature|x-signature")
 WEBHOOK_IDEMPOTENCY_RE = re.compile(r"(?i)idempoten|event\.id\b|event_id|eventId|already[_ ]processed|processed_events|dedup|on\s+conflict")
-CREATE_TABLE_RE = re.compile(r"(?i)\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)")
-ENABLE_RLS_RE = re.compile(r"(?i)\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)\s+enable\s+row\s+level\s+security")
-DROP_TABLE_RE = re.compile(r"(?i)\bdrop\s+table\s+(?:if\s+exists\s+)?(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)")
-
 SECURITY_PACKAGES = {
     "helmet": (18, "security headers"), "express-rate-limit": (4, "rate limiting"), "@upstash/ratelimit": (4, "rate limiting"),
     "rate-limiter-flexible": (4, "rate limiting"), "slowapi": (4, "rate limiting"), "django-ratelimit": (4, "rate limiting"),
@@ -338,7 +357,10 @@ SECURITY_PACKAGES = {
     "flask": (2, "Flask"), "fastapi": (2, "FastAPI"), "express": (2, "Express"), "next": (2, "Next.js"),
     "@nestjs/core": (2, "NestJS"), "fastify": (2, "Fastify"), "hono": (2, "Hono"), "laravel/framework": (2, "Laravel"),
     "rails": (2, "Rails"), "multer": (16, "uploads"), "formidable": (16, "uploads"), "busboy": (16, "uploads"),
-    "stripe": (19, "Stripe webhooks"), "svix": (19, "webhook verification"), "@aws-sdk/client-s3": (13, "S3 storage"),
+    "stripe": (19, "Stripe webhooks"), "openai": (22, "LLM SDK"), "@anthropic-ai/sdk": (22, "LLM SDK"), "anthropic": (22, "LLM SDK"),
+    "ai": (22, "Vercel AI SDK"), "langchain": (22, "LLM framework"), "ssrf-req-filter": (20, "SSRF filter"), "request-filtering-agent": (20, "SSRF filter"),
+    "svix": (19, "webhook verification"), "@aws-sdk/client-s3": (13, "S3 storage"),
+    "svix": (19, "webhook verification"), "@aws-sdk/client-s3": (13, "S3 storage"),
     "boto3": (13, "AWS SDK"), "jsonwebtoken": (2, "JWT"), "jose": (2, "JWT"), "pyjwt": (2, "JWT"),
     "react-google-recaptcha": (11, "CAPTCHA"), "@hcaptcha/react-hcaptcha": (11, "CAPTCHA"),
     "@marsidev/react-turnstile": (11, "CAPTCHA"), "csurf": (3, "CSRF"), "django-csp": (18, "CSP"),
@@ -414,7 +436,8 @@ RULE_TITLES = {r.rid: r.title for r in RULES}
 RULE_TITLES.update({"SEC001": "Possible hardcoded credential", "SEC012": "Known-format secret",
                     "SEC030": "Table without row-level security", "SEC031": "Webhook handler without visible signature verification",
                     "SEC032": "Environment file not covered by root .gitignore", "SEC033": "Dependency manifest without a lockfile",
-                    "SEC034": "Webhook handler without visible idempotency handling"})
+                    "SEC034": "Webhook handler without visible idempotency handling",
+                    "SEC038": "RLS enabled but no policies defined", "SEC039": "Prisma model without a tenant key in a multi-tenant schema"})
 SECRET_GUIDANCE = {
     "SEC001": "Confirm whether the value is real. If so, rotate it, remove it from history, and load it from a secret store.",
     "SEC012": "Treat as exposed: rotate first, then purge from git history and move to a secret store.",
@@ -443,9 +466,108 @@ def is_ignored(rel, patterns):
     return False
 
 
+TABLE_NAME = r"(?P<name>(?:\"?\w+\"?\.)?\"?\w+\"?)"
+CREATE_TABLE_RE = re.compile(r"(?i)\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?" + TABLE_NAME)
+ENABLE_RLS_RE = re.compile(r"(?i)\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?" + TABLE_NAME + r"\s+enable\s+row\s+level\s+security")
+DROP_TABLE_RE = re.compile(r"(?i)\bdrop\s+table\s+(?:if\s+exists\s+)?" + TABLE_NAME)
+POLICY_RE = re.compile(r"(?i)\bcreate\s+policy\s+(?:\"[^\"]+\"|\w+)\s+on\s+" + TABLE_NAME)
+DRIZZLE_TABLE_RE = re.compile(r"(?:export\s+)?const\s+(?P<var>\w+)\s*=\s*pgTable(?P<rls>\.withRLS)?\s*\(\s*[\"'](?P<name>\w+)[\"']")
+DRIZZLE_RLS_RE = re.compile(r"\.enableRLS\s*\(|\bpgPolicy\s*\(")
+PRISMA_MODEL_RE = re.compile(r"^\s*model\s+(?P<name>\w+)\s*\{")
+TENANT_FIELD_RE = re.compile(r"^\s*(?:tenant|org|organization|workspace|account|team|company)_?[iI]d\b", re.I)
+PRISMA_GLOBAL_MODELS = re.compile(r"(?i)^(?:user|users|account|session|verificationtoken|authenticator|tenant|org|organization|"
+                                  r"workspace|team|company|plan|price|product|feature|migration|_\w+)$")
+SUPABASE_INTERNAL_SCHEMAS = ("auth", "storage", "realtime", "supabase_functions", "extensions", "graphql", "graphql_public",
+                             "vault", "pgsodium", "pgsodium_masks", "net", "supabase_migrations", "cron", "pgbouncer")
+
+
 def norm_table(name):
     parts = [p.strip('"').lower() for p in name.split(".")]
     return (parts[0] if len(parts) == 2 else "public", parts[-1])
+
+
+def analyze_schema_files(files, rls_app):
+    """files: list of (rel, ext, lines, in_test). Returns findings."""
+    findings = []
+    tables, rls_tables, policies, rls_seen = {}, set(), set(), False
+    drizzle_tables, drizzle_rls_used = [], False
+    prisma_models = []
+    for rel, ext, lines, in_test in files:
+        context = "test" if in_test else "source"
+        if ext == ".sql":
+            for number, line in enumerate(lines, 1):
+                if line.lstrip().startswith("--"):
+                    continue
+                for m in CREATE_TABLE_RE.finditer(line):
+                    tables[norm_table(m.group("name"))] = (rel, number, redact(line), context)
+                for m in ENABLE_RLS_RE.finditer(line):
+                    rls_tables.add(norm_table(m.group("name")))
+                    rls_seen = True
+                for m in POLICY_RE.finditer(line):
+                    policies.add(norm_table(m.group("name")))
+                for m in DROP_TABLE_RE.finditer(line):
+                    tables.pop(norm_table(m.group("name")), None)
+        elif ext == ".prisma":
+            prisma_models += parse_prisma(rel, lines, context)
+        else:
+            text = "\n".join(lines)
+            drizzle_rls_used = drizzle_rls_used or bool(DRIZZLE_RLS_RE.search(text)) or ".withRLS" in text
+            starts = [(m.start(), m) for m in DRIZZLE_TABLE_RE.finditer(text)]
+            for i, (pos, m) in enumerate(starts):
+                end = starts[i + 1][0] if i + 1 < len(starts) else len(text)
+                body = text[pos:end]
+                number = text.count("\n", 0, pos) + 1
+                has_rls = bool(m.group("rls")) or bool(DRIZZLE_RLS_RE.search(body))
+                drizzle_tables.append((m.group("name"), rel, number, has_rls, redact(lines[number - 1]), context))
+
+    if rls_app or rls_seen:
+        for (schema, table), (rel, number, evidence, context) in sorted(tables.items()):
+            if schema != "public":
+                continue
+            if (schema, table) not in rls_tables:
+                findings.append(make_finding(
+                    "SEC030", f"Table '{table}' created without ENABLE ROW LEVEL SECURITY", "High", "medium", (1,),
+                    rel, number, evidence,
+                    "In an RLS-based app, any exposed table without RLS is readable/writable across tenants. "
+                    "Enable RLS and add tenant-scoped policies, or move the table to a non-exposed schema.", context))
+            elif (schema, table) not in policies:
+                findings.append(make_finding(
+                    "SEC038", f"Table '{table}' has RLS enabled but no policies", "Low", "medium", (1,), rel, number, evidence,
+                    "Deny-all is safe, but it often pushes app code to the service-role key, which bypasses RLS entirely. "
+                    "Confirm how the app reads this table.", context))
+    if rls_app or drizzle_rls_used:
+        for name, rel, number, has_rls, evidence, context in drizzle_tables:
+            if not has_rls:
+                findings.append(make_finding(
+                    "SEC030", f"Drizzle table '{name}' defined without RLS", "High", "low", (1,), rel, number, evidence,
+                    "Use pgTable.withRLS / .enableRLS() and pgPolicy for tenant-owned tables, or confirm RLS is applied in SQL migrations.",
+                    context))
+    tenant_models = [m for m in prisma_models if m[3]]
+    if len(tenant_models) >= 2:
+        for name, rel, number, has_tenant, context in prisma_models:
+            if not has_tenant and not PRISMA_GLOBAL_MODELS.match(name):
+                findings.append(make_finding(
+                    "SEC039", f"Prisma model '{name}' has no tenant key", "Informational", "low", (1, 9), rel, number,
+                    f"model {name} lacks a tenant/org field while {len(tenant_models)} models have one",
+                    "Confirm this model is global or always reached through a tenant-scoped parent; otherwise add a tenant key "
+                    "and scope every query (Prisma has no RLS; consider a client extension that injects the tenant filter).",
+                    context))
+    return findings
+
+
+def parse_prisma(rel, lines, context):
+    models, current = [], None
+    for number, line in enumerate(lines, 1):
+        m = PRISMA_MODEL_RE.match(line)
+        if m:
+            current = [m.group("name"), rel, number, False, context]
+        elif current is not None:
+            if line.strip() == "}":
+                models.append(tuple(current))
+                current = None
+            elif TENANT_FIELD_RE.match(line):
+                current[3] = True
+    return models
 
 
 def fingerprint(f):
@@ -479,7 +601,7 @@ def scan(root, collect=None):
     state = collect if collect is not None else {}
     scan_state_defaults(state)
     findings, ignore_pats = [], parse_gitignore(root)
-    tables, rls_tables, rls_seen = {}, set(), False
+    schema_files = []
     webhook_files = []
     supabase = (root / "supabase").is_dir()
 
@@ -550,28 +672,15 @@ def scan(root, collect=None):
                                     sig["source"].append(f"{rel}:{number}")
                 if category == "code" and not in_test and first_webhook_line is None and WEBHOOK_ROUTE_RE.search(line):
                     first_webhook_line = number
-                if category == "sql" and not is_comment:
-                    for m in CREATE_TABLE_RE.finditer(line):
-                        tables[norm_table(m.group("name"))] = (rel, number, redact(line))
-                    for m in ENABLE_RLS_RE.finditer(line):
-                        rls_tables.add(norm_table(m.group("name")))
-                        rls_seen = True
-                    for m in DROP_TABLE_RE.finditer(line):
-                        tables.pop(norm_table(m.group("name")), None)
+            if category == "sql" or ext == ".prisma" or (category == "code" and any("pgTable(" in l for l in lines)):
+                schema_files.append((rel, ext, lines, in_test))
             if first_webhook_line is not None:
                 text = "\n".join(lines)
                 webhook_files.append((rel, first_webhook_line, bool(WEBHOOK_VERIFY_RE.search(text)),
                                       bool(WEBHOOK_IDEMPOTENCY_RE.search(text))))
 
-    if supabase or rls_seen or any(p.startswith("@supabase/") for p in state["packages"]):
-        for (schema, table), (rel, number, evidence) in sorted(tables.items()):
-            if schema == "public" and (schema, table) not in rls_tables:
-                findings.append(make_finding(
-                    "SEC030", f"Table '{table}' created without ENABLE ROW LEVEL SECURITY", "High", "medium", (1,),
-                    rel, number, evidence,
-                    "In an RLS-based app, any exposed table without RLS is readable/writable across tenants. "
-                    "Enable RLS and add tenant-scoped policies, or move the table to a non-exposed schema.",
-                    "test" if TEST_PATH_RE.search(rel) else "source"))
+    rls_app = supabase or any(p.startswith("@supabase/") for p in state["packages"])
+    findings += analyze_schema_files(schema_files, rls_app)
     for rel, number, verified, idempotent in webhook_files:
         if not verified:
             findings.append(make_finding(

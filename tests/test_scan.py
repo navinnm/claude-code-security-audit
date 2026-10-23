@@ -19,6 +19,13 @@ def write(root, rel, text):
     path.write_text(text, encoding="utf-8")
 
 
+# Fake credentials are assembled at runtime so no secret-shaped literal ships in the plugin source.
+FAKE_API_VALUE = "supersecret" + "value123"
+FAKE_STRIPE_LIVE = "sk_" + "live_" + "abcdefghijklmnop1234"
+FAKE_AWS_ID = "AKIA" + "ABCDEFGHIJKLMNOP"
+FAKE_DB_PASSWORD = "hunter2" + "pass"
+
+
 def jwt(payload):
     enc = lambda d: base64.urlsafe_b64encode(json.dumps(d).encode()).decode().rstrip("=")
     return f"{enc({'alg': 'HS256', 'typ': 'JWT'})}.{enc(payload)}.c2lnbmF0dXJlc2lnbmF0dXJl"
@@ -39,29 +46,29 @@ class ScanCase(unittest.TestCase):
 
 class SecretTests(ScanCase):
     def test_detects_debug_and_redacts_secret(self):
-        write(self.root, "app.py", 'APP_DEBUG = True\nAPI_KEY = "supersecretvalue123"\n')
+        write(self.root, "app.py", f'APP_DEBUG = True\nAPI_KEY = "{FAKE_API_VALUE}"\n')
         findings = scan_module.scan(self.root)
         ids = {f["id"] for f in findings}
         self.assertIn("SEC001", ids)
         self.assertIn("SEC004", ids)
         secret = next(f for f in findings if f["id"] == "SEC001")
-        self.assertNotIn("supersecretvalue123", secret["evidence"])
+        self.assertNotIn(FAKE_API_VALUE, secret["evidence"])
         self.assertIn("[REDACTED]", secret["evidence"])
 
     def test_scans_suffixed_env_files_and_redacts(self):
-        write(self.root, ".env.production", "STRIPE_SECRET_KEY=sk_live_abcdefghijklmnop1234\n"
-                                             "DATABASE_URL=postgres://admin:hunter2pass@db.prod.example.com/app\n")
+        write(self.root, ".env.production", f"STRIPE_SECRET_KEY={FAKE_STRIPE_LIVE}\n"
+                                             f"DATABASE_URL=postgres://admin:{FAKE_DB_PASSWORD}@db.prod.example.com/app\n")
         findings = scan_module.scan(self.root)
         live = [f for f in findings if f["id"] == "SEC012"]
         self.assertEqual({f["severity"] for f in live}, {"Critical", "High"})
         for f in findings:
-            self.assertNotIn("sk_live_abcdefghijklmnop1234", f["evidence"])
-            self.assertNotIn("hunter2pass", f["evidence"])
+            self.assertNotIn(FAKE_STRIPE_LIVE, f["evidence"])
+            self.assertNotIn(FAKE_DB_PASSWORD, f["evidence"])
         self.assertIn("SEC032", {f["id"] for f in findings})
 
     def test_gitignored_env_is_context_marked_not_gated(self):
         write(self.root, ".gitignore", ".env*\n!.env.example\n")
-        write(self.root, ".env.local", "AWS_KEY=AKIAABCDEFGHIJKLMNOP\n")
+        write(self.root, ".env.local", f"AWS_KEY={FAKE_AWS_ID}\n")
         findings = scan_module.scan(self.root)
         self.assertNotIn("SEC032", {f["id"] for f in findings})
         hit = next(f for f in findings if f["id"] == "SEC012")
@@ -107,7 +114,7 @@ class InjectionTests(ScanCase):
 
     def test_comment_lines_skip_code_rules_but_not_secrets(self):
         self.assertEqual(self.ids("a.js", "// el.innerHTML = x\n"), [])
-        self.assertIn("SEC012", self.ids("b.js", "// key: AKIAABCDEFGHIJKLMNOP\n"))
+        self.assertIn("SEC012", self.ids("b.js", f"// key: {FAKE_AWS_ID}\n"))
 
 
 class SaasRuleTests(ScanCase):
@@ -144,6 +151,54 @@ class SaasRuleTests(ScanCase):
         self.assertIn("SEC033", {f["id"] for f in scan_module.scan(self.root)})
         write(self.root, "package-lock.json", "{}")
         self.assertNotIn("SEC033", {f["id"] for f in scan_module.scan(self.root)})
+
+
+class ModernControlTests(ScanCase):
+    def test_twenty_two_controls(self):
+        self.assertEqual(len(scan_module.CONTROLS), 22)
+        self.assertIn("| 22 | AI/LLM security and prompt injection | NOT VERIFIED |", scan_module.markdown(self.root, []))
+
+    def test_ssrf_maps_to_control_20(self):
+        write(self.root, "proxy.py", "requests.get(request.args['url'])\n")
+        hit = next(f for f in scan_module.scan(self.root) if f["id"] == "SEC020")
+        self.assertEqual(hit["controls"][0], 20)
+
+    def test_jwt_lifecycle(self):
+        write(self.root, "auth.js", 'jwt.sign(p, key, { expiresIn: "365d" });\nconst ok = jwt.verify(token, secret);\n')
+        by_id = {f["id"]: f for f in scan_module.scan(self.root)}
+        self.assertEqual(by_id["SEC037"]["controls"], [21])
+        self.assertEqual(by_id["SEC017"]["controls"][0], 21)
+        self.assertNotIn("SEC017", self.ids("ok.js", "jwt.verify(token, secret, { algorithms: ['RS256'] });\n"))
+
+    def test_llm_prompt_injection_and_output_sink(self):
+        ids = self.ids("ai.ts", "const systemPrompt = `Context: ${req.body.notes}`;\n"
+                                "await db.query(completion.choices[0].message.content);\n")
+        self.assertEqual(sorted(ids), ["SEC035", "SEC036"])
+
+    def test_drizzle_rls(self):
+        write(self.root, "db/schema.ts", 'export const projects = pgTable("projects", { id: uuid("id") });\n'
+                                         'export const orgs = pgTable("orgs", { id: uuid("id") }).enableRLS();\n')
+        rls = [f for f in scan_module.scan(self.root) if f["id"] == "SEC030"]
+        self.assertEqual(len(rls), 1)
+        self.assertIn("projects", rls[0]["title"])
+
+    def test_rls_without_policies(self):
+        write(self.root, "supabase/migrations/1.sql", "create table public.notes (id uuid);\n"
+                                                      "alter table public.notes enable row level security;\n")
+        self.assertIn("SEC038", {f["id"] for f in scan_module.scan(self.root)})
+        write(self.root, "supabase/migrations/2.sql", 'create policy "own" on public.notes using (owner = auth.uid());\n')
+        self.assertNotIn("SEC038", {f["id"] for f in scan_module.scan(self.root)})
+
+    def test_prisma_model_without_tenant_key(self):
+        write(self.root, "schema.prisma", "model Project {\n  id String @id\n  orgId String\n}\n"
+                                          "model Invoice {\n  id String @id\n  orgId String\n}\n"
+                                          "model AuditEvent {\n  id String @id\n}\nmodel User {\n  id String @id\n}\n")
+        names = [f["title"] for f in scan_module.scan(self.root) if f["id"] == "SEC039"]
+        self.assertEqual(len(names), 1)
+        self.assertIn("AuditEvent", names[0])
+
+    def test_public_gcs_bucket(self):
+        self.assertIn("SEC026", self.ids("main.tf", 'member = "allUsers"\n'))
 
 
 class BehaviourTests(ScanCase):
