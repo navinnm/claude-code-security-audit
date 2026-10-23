@@ -1,0 +1,8 @@
+{
+  "name": "saas-security-audit",
+  "version": "0.1.0",
+  "description": "Evidence-driven local SaaS security audit, remediation planning, and verification for Claude Code.",
+  "author": {
+    "name": "Fulgid Software Solutions Pvt Ltd"
+  }
+}
